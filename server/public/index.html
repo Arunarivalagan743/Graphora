@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neo4j Upload Logs Dashboard</title>
+  <!-- Outfit Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Outfit', 'sans-serif'],
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    body {
+      background: radial-gradient(circle at top right, #111827, #030712);
+      min-height: 100vh;
+      color: #f3f4f6;
+    }
+    .glass-card {
+      background: rgba(17, 24, 39, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .badge-success {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .badge-failure {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.1);
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="py-10 px-4 sm:px-6 lg:px-8 font-sans">
+  <div class="max-w-6xl mx-auto">
+    
+    <!-- Header -->
+    <header class="flex flex-col md:flex-row items-center justify-between pb-8 mb-8 border-b border-gray-800 gap-4">
+      <div class="flex items-center gap-3">
+        <div class="p-3 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-xl shadow-lg shadow-cyan-500/20">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+            Neo4j Upload Monitor
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">Active</span>
+          </h1>
+          <p class="text-sm text-gray-400">Node Express Server Transaction Dashboard</p>
+        </div>
+      </div>
+      
+      <!-- Controls -->
+      <div class="flex items-center gap-3 flex-wrap">
+        <label class="flex items-center gap-2 text-xs text-gray-300 bg-gray-900/60 border border-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-800/40">
+          <input type="checkbox" id="autoRefresh" checked class="rounded border-gray-700 bg-gray-800 text-cyan-500 focus:ring-cyan-500">
+          Auto-refresh (2s)
+        </label>
+        
+        <button id="clearLogsBtn" class="flex items-center gap-1.5 px-4 py-2 bg-red-600/10 hover:bg-red-600/20 border border-red-600/30 hover:border-red-600/50 rounded-lg text-xs font-semibold text-red-400 transition-all">
+          Clear Monitor Logs
+        </button>
+
+        <button id="manualRefreshBtn" class="flex items-center gap-1.5 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-xs font-semibold text-gray-200 transition-all">
+          Refresh Now
+        </button>
+      </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      
+      <!-- Logs List (Left 2 cols) -->
+      <div class="lg:col-span-2 space-y-6">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-gray-200 flex items-center gap-2">
+            Transaction Activity History
+            <span id="logCount" class="text-xs bg-gray-800 text-gray-400 px-2.5 py-0.5 rounded-full">0 entries</span>
+          </h2>
+        </div>
+
+        <div id="logsContainer" class="space-y-4">
+          <!-- Logs get injected here -->
+          <div class="glass-card rounded-xl p-8 text-center text-gray-500 text-sm">
+            No upload transactions registered yet. Use the Postman guide on the right to send an upload request.
+          </div>
+        </div>
+      </div>
+
+      <!-- Testing & Configuration Guide (Right 1 col) -->
+      <div class="space-y-6">
+        <h2 class="text-lg font-semibold text-gray-200">Postman / API Test Guide</h2>
+        
+        <!-- Postman Endpoint Details -->
+        <div class="glass-card rounded-xl p-5 space-y-4 text-sm">
+          <div>
+            <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Target Endpoint</div>
+            <div class="flex items-center justify-between bg-black/40 rounded-lg p-2.5 border border-gray-800">
+              <span class="font-mono text-cyan-400 font-medium">POST /api/upload</span>
+              <span class="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400">JSON</span>
+            </div>
+          </div>
+
+          <div>
+            <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Postman Body (JSON Example)</div>
+            <pre class="bg-black/60 rounded-lg p-3 border border-gray-800 text-xs font-mono text-gray-300 overflow-x-auto custom-scrollbar">
+{
+  "uri": "bolt://localhost:7687",
+  "username": "neo4j",
+  "password": "your_password",
+  "label": "User",
+  "data": [
+    {
+      "name": "Alice Johnson",
+      "email": "alice@example.com",
+      "role": "Developer"
+    },
+    {
+      "name": "Bob Smith",
+      "email": "bob@example.com",
+      "role": "Designer"
+    }
+  ]
+}</pre>
+          </div>
+
+          <div class="border-t border-gray-800/80 pt-4">
+            <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">cURL Shell Command</div>
+            <div class="relative group">
+              <pre id="curlCommand" class="bg-black/60 rounded-lg p-3 border border-gray-800 text-[11px] font-mono text-gray-300 overflow-x-auto custom-scrollbar max-h-36">
+curl -X POST http://localhost:5000/api/upload \
+  -H "Content-Type: application/json" \
+  -d '{
+    "uri": "bolt://localhost:7687",
+    "username": "neo4j",
+    "password": "your_password",
+    "label": "User",
+    "data": [
+      {"name": "Alice", "role": "Developer"},
+      {"name": "Bob", "role": "Designer"}
+    ]
+  }'</pre>
+              <button onclick="copyCurl()" class="absolute right-2 top-2 px-2 py-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white rounded text-[10px] font-medium transition-all">
+                Copy
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Connection Parameters Help -->
+        <div class="glass-card rounded-xl p-5 border-l-4 border-amber-500/50 bg-amber-500/[0.02]">
+          <h3 class="text-sm font-semibold text-amber-400 flex items-center gap-1.5 mb-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            Configuration Notice
+          </h3>
+          <p class="text-xs text-gray-400 leading-relaxed">
+            If you omit <code>uri</code>, <code>username</code>, or <code>password</code> in the JSON payload, the server will automatically default to the environment variables set in the server's <code>.env</code> file.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const logsContainer = document.getElementById('logsContainer');
+    const logCountElement = document.getElementById('logCount');
+    const autoRefreshCheckbox = document.getElementById('autoRefresh');
+    const clearLogsBtn = document.getElementById('clearLogsBtn');
+    const manualRefreshBtn = document.getElementById('manualRefreshBtn');
+    
+    let refreshInterval = null;
+
+    async function fetchLogs() {
+      try {
+        const response = await fetch('/api/logs');
+        if (!response.ok) throw new Error('Failed to retrieve logs');
+        const data = await response.json();
+        renderLogs(data.logs);
+      } catch (err) {
+        console.error('Error fetching logs:', err);
+      }
+    }
+
+    function renderLogs(logs) {
+      logCountElement.innerText = `${logs.length} ${logs.length === 1 ? 'entry' : 'entries'}`;
+      
+      if (logs.length === 0) {
+        logsContainer.innerHTML = `
+          <div class="glass-card rounded-xl p-8 text-center text-gray-500 text-sm">
+            No upload transactions registered yet. Use the Postman guide on the right to send an upload request.
+          </div>
+        `;
+        return;
+      }
+
+      logsContainer.innerHTML = logs.map(log => {
+        const dateStr = new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + 
+                        ' ' + new Date(log.timestamp).toLocaleDateString();
+        
+        const isSuccess = log.status === 'success';
+        const badgeClass = isSuccess ? 'badge-success' : 'badge-failure';
+        
+        return `
+          <div class="glass-card rounded-xl p-5 flex flex-col gap-3 transition-all hover:border-gray-700">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800/60 pb-3">
+              <div class="flex items-center gap-3">
+                <span class="text-xs px-2.5 py-0.5 rounded-full font-semibold uppercase tracking-wider text-[10px] ${badgeClass}">
+                  ${log.status}
+                </span>
+                <span class="text-xs font-mono text-gray-400">${dateStr}</span>
+              </div>
+              <div class="text-xs text-gray-400">
+                Label: <code class="bg-gray-800 text-gray-200 px-1.5 py-0.5 rounded">${log.label}</code>
+              </div>
+            </div>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <div>
+                <span class="text-gray-500">Database Connection:</span> 
+                <span class="font-mono text-gray-300 ml-1 truncate block sm:inline-block">${log.uri}</span>
+              </div>
+              <div class="sm:text-right">
+                <span class="text-gray-500">Record Count:</span> 
+                <span class="font-semibold text-gray-200 ml-1">${log.recordCount} nodes</span>
+              </div>
+            </div>
+
+            ${!isSuccess && log.error ? `
+              <div class="mt-2 bg-red-950/20 border border-red-900/40 rounded-lg p-3 text-xs text-red-400 font-mono">
+                <div class="font-semibold text-red-300 mb-1">Database Issue / Reason:</div>
+                <div class="break-words">${escapeHTML(log.error)}</div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function escapeHTML(str) {
+      return str.replace(/[&<>'"]/g, 
+        tag => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          "'": '&#39;',
+          '"': '&quot;'
+        }[tag] || tag)
+      );
+    }
+
+    async function clearLogs() {
+      if (!confirm('Are you sure you want to clear the logs display?')) return;
+      try {
+        await fetch('/api/logs/clear', { method: 'POST' });
+        fetchLogs();
+      } catch (err) {
+        console.error('Error clearing logs:', err);
+      }
+    }
+
+    function setupAutoRefresh() {
+      if (refreshInterval) clearInterval(refreshInterval);
+      if (autoRefreshCheckbox.checked) {
+        refreshInterval = setInterval(fetchLogs, 2000);
+      }
+    }
+
+    function copyCurl() {
+      const curlText = document.getElementById('curlCommand').innerText;
+      navigator.clipboard.writeText(curlText).then(() => {
+        alert('cURL command copied to clipboard!');
+      });
+    }
+
+    // Event listeners
+    autoRefreshCheckbox.addEventListener('change', setupAutoRefresh);
+    clearLogsBtn.addEventListener('click', clearLogs);
+    manualRefreshBtn.addEventListener('click', fetchLogs);
+
+    // Initial load
+    fetchLogs();
+    setupAutoRefresh();
+  </script>
+</body>
+</html>
