@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, ArrowUpDown, ArrowUp, ArrowDown, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, ArrowUpDown, ArrowUp, ArrowDown, FileText, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 
 export default function DataExplorer({
   data,
@@ -20,7 +20,10 @@ export default function DataExplorer({
   handleSort,
   selectedRows,
   handleSelectAll,
-  handleSelectRow
+  handleSelectRow,
+  manualRowDraft,
+  handleManualRowChange,
+  addManualRow
 }) {
   return (
     <div className="flex flex-col gap-4 sm:gap-5 animate-slide-up">
@@ -82,14 +85,50 @@ export default function DataExplorer({
         </div>
       </div>
 
+      {/* Manual Row Entry */}
+      {headers.length > 0 && (
+        <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-5 flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 className="font-heading font-bold text-sm text-zinc-900">Manual Row Entry</h3>
+              <p className="font-body text-[11px] text-zinc-500 mt-0.5">Fill values using the current CSV headers, then add the row to the table.</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={addManualRow}
+              className="font-heading font-semibold px-3.5 py-2 bg-black hover:bg-zinc-800 text-white rounded-xl text-xs transition-colors flex items-center gap-2 w-full sm:w-auto justify-center"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Row</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {headers.map(col => (
+              <label key={col} className="flex flex-col gap-1.5">
+                <span className="font-heading font-semibold text-[10px] uppercase tracking-wider text-zinc-500">{col}</span>
+                <input
+                  type="text"
+                  value={manualRowDraft?.[col] ?? ''}
+                  onChange={(e) => handleManualRowChange(col, e.target.value)}
+                  className="neat-input px-3 py-2 rounded-xl text-xs font-body"
+                  placeholder={`Enter ${col}`}
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* TABLE CONTAINER */}
-      <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden flex flex-col max-w-full">
-        <div className="overflow-x-auto min-h-[340px]">
+      <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden flex flex-col w-full">
+        <div className="overflow-x-auto min-h-[340px] w-full">
           {sortedData.length > 0 ? (
-            <table className="w-full border-collapse text-left">
+            <table className="w-full border-collapse text-left min-w-max">
               <thead>
                 <tr className="border-b border-zinc-200 bg-zinc-50 text-zinc-800 font-heading font-bold text-xs select-none">
-                  <th className="w-12 px-4 py-3 text-center">
+                  <th className="w-12 px-4 py-3 text-center sticky left-0 z-20 bg-zinc-50 border-r border-zinc-200">
                     <input
                       type="checkbox"
                       checked={paginatedData.length > 0 && paginatedData.every((_, idx) => selectedRows.has(idx + (currentPage - 1) * pageSize))}
@@ -102,7 +141,7 @@ export default function DataExplorer({
                     <th
                       key={col}
                       onClick={() => handleSort(col)}
-                      className="px-4 py-3 cursor-pointer hover:text-black whitespace-nowrap text-xs select-none font-heading font-semibold"
+                      className="px-4 py-3 cursor-pointer hover:text-black whitespace-nowrap text-xs select-none font-heading font-semibold min-w-[130px]"
                     >
                       <div className="flex items-center gap-1.5">
                         <span>{col}</span>
@@ -123,8 +162,8 @@ export default function DataExplorer({
                   const isChecked = selectedRows.has(globalIdx);
 
                   return (
-                    <tr key={rowIdx} className={`hover:bg-zinc-50 transition-colors ${isChecked ? 'bg-zinc-100' : ''}`}>
-                      <td className="px-4 py-3 text-center">
+                    <tr key={globalIdx} className={`hover:bg-zinc-50 transition-colors ${isChecked ? 'bg-zinc-100' : ''}`}>
+                      <td className="px-4 py-3 text-center sticky left-0 z-10 bg-white border-r border-zinc-100">
                         <input
                           type="checkbox"
                           checked={isChecked}
@@ -141,7 +180,7 @@ export default function DataExplorer({
                         return (
                           <td
                             key={col}
-                            className={`px-4 py-2.5 truncate max-w-[240px] ${isNum ? 'text-right font-mono font-medium text-zinc-900' : 'text-zinc-700'}`}
+                            className={`px-4 py-2.5 align-middle whitespace-nowrap max-w-xs truncate ${isNum ? 'text-right font-mono font-medium text-zinc-900' : 'text-zinc-700'}`}
                           >
                             {valStr}
                           </td>

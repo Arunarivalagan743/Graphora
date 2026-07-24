@@ -7,8 +7,14 @@ export default function Neo4jSync({
   clearNeo4jNodes,
   neo4jLabel,
   saveToNeo4j,
-  dataLength
+  cleanAndSaveToNeo4j,
+  dataLength,
+  neo4jStreaming = false,
+  neo4jProgress = { processedRows: 0 },
+  neo4jBatches = []
 }) {
+  const percent = dataLength > 0 ? Math.min(100, Math.round((neo4jProgress.processedRows || 0) * 100 / dataLength)) : 0;
+
   return (
     <div className="flex flex-col gap-6 animate-slide-up">
       <div className="bg-white border border-zinc-200 rounded-xl sm:rounded-2xl p-4 sm:p-6 flex flex-col gap-6">
@@ -36,33 +42,73 @@ export default function Neo4jSync({
           </div>
         )}
 
+        {neo4jStatus === 'loading' && (
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-[11px] text-zinc-600 font-body leading-relaxed">
+            Streaming mode is active. The browser sends the CSV file once, and the server adapts batch sizes while writing to Neo4j.
+          </div>
+        )}
+
+        {/* Streaming progress */}
+        {neo4jStreaming && (
+          <div className="rounded-xl border border-zinc-200 bg-white p-3 text-xs text-zinc-700 font-body">
+            <div className="flex items-center justify-between mb-2">
+              <div>Processed rows: <strong>{neo4jProgress.processedRows || 0}</strong> / {dataLength || 'unknown'}</div>
+              <div className="text-zinc-500">Batches: {neo4jBatches.length}</div>
+            </div>
+            <div className="w-full h-2 bg-zinc-100 rounded overflow-hidden mb-2">
+              <div className="h-2 bg-black" style={{ width: `${percent}%` }} />
+            </div>
+            <div className="text-[11px] text-zinc-500">Recent batches (rows · ms):</div>
+            <div className="mt-2 grid grid-cols-1 gap-1 max-h-36 overflow-auto">
+              {neo4jBatches.slice(-5).reverse().map((b, i) => (
+                <div key={i} className="flex justify-between items-center text-[11px] text-zinc-600 bg-zinc-50 p-2 rounded">
+                  <div>{b.rows} rows</div>
+                  <div className="text-zinc-500">{b.durationMs} ms</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Actions Footer */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 pt-2">
           <div className="flex flex-col sm:flex-row gap-2">
             <button
-              onClick={() => clearNeo4jNodes(neo4jLabel)}
+              onClick={() => clearNeo4jNodes(neo4jLabel, false)}
               disabled={neo4jStatus === 'loading'}
               className="font-heading font-semibold px-3.5 py-2 bg-white hover:bg-zinc-100 disabled:opacity-50 text-zinc-800 border border-zinc-300 rounded-xl text-xs transition-colors text-center"
             >
               Clear Label Nodes
             </button>
             <button
-              onClick={() => clearNeo4jNodes('*')}
+              onClick={() => clearNeo4jNodes('*', false)}
               disabled={neo4jStatus === 'loading'}
-              className="font-heading font-semibold px-3.5 py-2 bg-black hover:bg-zinc-800 disabled:opacity-50 text-white rounded-xl text-xs transition-colors text-center"
+              className="font-heading font-semibold px-3.5 py-2 bg-zinc-100 hover:bg-zinc-200 disabled:opacity-50 text-zinc-900 border border-zinc-300 rounded-xl text-xs transition-colors text-center"
             >
-              Wipe Entire DB
+              Wipe DB Nodes
             </button>
           </div>
 
-          <button
-            onClick={saveToNeo4j}
-            disabled={neo4jStatus === 'loading' || dataLength === 0}
-            className="font-heading font-semibold px-5 py-2.5 bg-black hover:bg-zinc-800 disabled:opacity-50 text-white rounded-xl text-xs transition-all flex items-center justify-center gap-2"
-          >
-            <Plug className="w-4 h-4" />
-            <span>{neo4jStatus === 'loading' ? 'Syncing to Neo4j...' : 'Export Graph to Neo4j'}</span>
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              onClick={cleanAndSaveToNeo4j}
+              disabled={neo4jStatus === 'loading' || dataLength === 0}
+              className="font-heading font-semibold px-4 py-2.5 bg-white hover:bg-zinc-100 disabled:opacity-50 text-black border border-zinc-300 rounded-xl text-xs transition-all flex items-center justify-center gap-2"
+              title="Wipes existing database nodes and exports updated schema & properties cleanly"
+            >
+              <RefreshCw className="w-4 h-4 text-black" />
+              <span>Wipe & Re-Export Graph</span>
+            </button>
+
+            <button
+              onClick={saveToNeo4j}
+              disabled={neo4jStatus === 'loading' || dataLength === 0}
+              className="font-heading font-semibold px-5 py-2.5 bg-black hover:bg-zinc-800 disabled:opacity-50 text-white rounded-xl text-xs transition-all flex items-center justify-center gap-2"
+            >
+              <Plug className="w-4 h-4" />
+              <span>{neo4jStatus === 'loading' ? 'Syncing to Neo4j...' : 'Export Graph to Neo4j'}</span>
+            </button>
+          </div>
         </div>
 
         {/* Neo4j Property Keys Token Note */}
