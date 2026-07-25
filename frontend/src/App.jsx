@@ -99,8 +99,8 @@ export default function App() {
           <button
             onClick={() => setActiveTab('data-viewer')}
             className={`font-heading text-xs py-2.5 px-3 sm:px-4 border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'data-viewer'
-                ? 'border-black text-black font-bold'
-                : 'border-transparent text-zinc-500 hover:text-black font-medium'
+              ? 'border-black text-black font-bold'
+              : 'border-transparent text-zinc-500 hover:text-black font-medium'
               }`}
           >
             <FileSpreadsheet className="w-4 h-4" />
@@ -110,8 +110,8 @@ export default function App() {
           <button
             onClick={() => setActiveTab('graph-schema')}
             className={`font-heading text-xs py-2.5 px-3 sm:px-4 border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'graph-schema'
-                ? 'border-black text-black font-bold'
-                : 'border-transparent text-zinc-500 hover:text-black font-medium'
+              ? 'border-black text-black font-bold'
+              : 'border-transparent text-zinc-500 hover:text-black font-medium'
               }`}
           >
             <GitFork className="w-4 h-4 text-black" />
@@ -121,8 +121,8 @@ export default function App() {
           <button
             onClick={() => setActiveTab('neo4j-sync')}
             className={`font-heading text-xs py-2.5 px-3 sm:px-4 border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'neo4j-sync'
-                ? 'border-black text-black font-bold'
-                : 'border-transparent text-zinc-500 hover:text-black font-medium'
+              ? 'border-black text-black font-bold'
+              : 'border-transparent text-zinc-500 hover:text-black font-medium'
               }`}
           >
             <Plug className="w-4 h-4 text-black" />
@@ -135,8 +135,8 @@ export default function App() {
               fetchDiagnosticsAndLogs();
             }}
             className={`font-heading text-xs py-2.5 px-3 sm:px-4 border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'logs'
-                ? 'border-black text-black font-bold'
-                : 'border-transparent text-zinc-500 hover:text-black font-medium'
+              ? 'border-black text-black font-bold'
+              : 'border-transparent text-zinc-500 hover:text-black font-medium'
               }`}
           >
             <Database className="w-4 h-4 text-black" />
@@ -146,8 +146,8 @@ export default function App() {
           <button
             onClick={() => setActiveTab('ai-assistant')}
             className={`font-heading text-xs py-2.5 px-3 sm:px-4 border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'ai-assistant'
-                ? 'border-black text-black font-bold'
-                : 'border-transparent text-zinc-500 hover:text-black font-medium'
+              ? 'border-black text-black font-bold'
+              : 'border-transparent text-zinc-500 hover:text-black font-medium'
               }`}
           >
             <Bot className="w-4 h-4 text-black" />
