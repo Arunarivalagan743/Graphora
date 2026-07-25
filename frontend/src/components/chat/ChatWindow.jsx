@@ -56,7 +56,7 @@ export default function ChatWindow() {
               <h2 className="font-heading font-bold text-sm text-zinc-900 flex items-center gap-2">
                 <span>Graphora AI Assistant</span>
                 <span className="bg-zinc-100 text-zinc-800 text-[10px] px-2 py-0.5 rounded-full font-mono border border-zinc-300">
-                  LangGraph + Neo4j Engine
+                  LangChain Agent + Neo4j Engine
                 </span>
               </h2>
               <p className="font-body text-[11px] text-zinc-500">
@@ -69,7 +69,7 @@ export default function ChatWindow() {
             {isStreaming && (
               <span className="flex items-center gap-1.5 text-[11px] font-mono text-black font-semibold bg-zinc-100 px-2.5 py-1 rounded-full border border-zinc-300">
                 <RefreshCw className="w-3 h-3 animate-spin text-black" />
-                <span>Streaming Cypher...</span>
+                <span>Streaming Agent Answer...</span>
               </span>
             )}
           </div>

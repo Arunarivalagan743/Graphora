@@ -1,9 +1,6 @@
-import { callLLM } from '../config/llm.js';
-import { schemaContextBuilder } from '../context/schemaContextBuilder.js';
-import { chatMemoryManager } from '../memory/chatMemory.js';
-import { CYPHER_GENERATION_SYSTEM_PROMPT, CYPHER_GENERATION_USER_PROMPT } from '../prompts/cypherPrompts.js';
+import { langchainToolAgent } from '../agent/langchainAgent.js';
 import { neo4jReadService } from '../../services/neo4jReadService.js';
-import { answerGenerator } from '../generators/answerGenerator.js';
+import { chatMemoryManager } from '../memory/chatMemory.js';
 
 /**
  * Validates candidate Cypher query for syntax and read-only safety.
@@ -38,74 +35,20 @@ export async function executeCypherQuery(cypher) {
 }
 
 /**
- * LangGraph Agent Workflow Orchestrator
- * Runs: Context -> Cypher Gen -> Validation -> Execution -> Answer Synthesis
+ * LangChain Tool-Calling Agent Workflow Orchestrator
+ * Runs Single Agent with Reasoning & Tool-Calling Ability (Hidden Reasoning Output)
  */
 export class ChatWorkflowOrchestrator {
   /**
-   * Executes full workflow and streams/returns generated response
+   * Executes tool agent workflow and streams final synthesized response
    */
   async runWorkflow({ question, sessionId }, onStreamChunk) {
-    // 1. Extract Conversation History & Relevant Schema Context
     const conversationHistory = chatMemoryManager.getFormattedHistory(sessionId);
-    const { formattedContext } = await schemaContextBuilder.buildRelevantContext(question, conversationHistory);
 
-    // 2. Generate Candidate Read-Only Cypher Query
-    const sysPrompt = CYPHER_GENERATION_SYSTEM_PROMPT
-      .replace('{schemaContext}', formattedContext)
-      .replace('{conversationHistory}', conversationHistory || 'None');
-    
-    const usrPrompt = CYPHER_GENERATION_USER_PROMPT.replace('{question}', question);
-
-    let rawCypherText = await callLLM({ systemPrompt: sysPrompt, userPrompt: usrPrompt, temperature: 0.1 });
-    
-    // Extract Cypher from code block if wrapped
-    const cypherMatch = rawCypherText.match(/```(?:cypher)?\s*([\s\S]*?)\s*```/i);
-    let cypherQuery = cypherMatch ? cypherMatch[1].trim() : rawCypherText.trim();
-
-    console.log('[ChatWorkflow] Formatted Schema Context:\n', formattedContext);
-    console.log('[ChatWorkflow] Generated Cypher:', cypherQuery);
-
-    // 3. Validate Cypher Safety
-    let validation = validateCypherQuery(cypherQuery);
-    if (!validation.valid) {
-      console.warn('[ChatWorkflow] Initial Cypher invalid, retrying:', validation.error);
-      const retrySysPrompt = sysPrompt + `\n\nERROR IN PREVIOUS CYPHER: ${validation.error}. FIX THE QUERY AND RETURN ONLY VALID READ-ONLY CYPHER.`;
-      rawCypherText = await callLLM({ systemPrompt: retrySysPrompt, userPrompt: usrPrompt, temperature: 0.0 });
-      const retryMatch = rawCypherText.match(/```(?:cypher)?\s*([\s\S]*?)\s*```/i);
-      cypherQuery = retryMatch ? retryMatch[1].trim() : rawCypherText.trim();
-      validation = validateCypherQuery(cypherQuery);
-    }
-
-    // 4. Execute Read-Only Query against Neo4j
-    let queryResult = { success: false, records: [], count: 0 };
-    if (validation.valid) {
-      queryResult = await executeCypherQuery(validation.cypher);
-      console.log('[ChatWorkflow] Query Result Count:', queryResult.count, 'Records:', JSON.stringify(queryResult.records));
-    }
-
-    // 5. Synthesize Final Human-Friendly Markdown Answer (Zero Hallucination)
-    const finalAnswer = await answerGenerator.generateAnswer({
-      question,
-      queryResults: queryResult,
-      conversationHistory
-    });
-
-    // Stream tokens if callback provided
-    if (onStreamChunk) {
-      const words = finalAnswer.split(' ');
-      for (const word of words) {
-        onStreamChunk(word + ' ');
-        await new Promise((r) => setTimeout(r, 15));
-      }
-    }
-
-    return {
-      success: true,
-      answer: finalAnswer,
-      cypherUsed: validation.valid ? validation.cypher : null,
-      recordCount: queryResult.count
-    };
+    return await langchainToolAgent.runAgent(
+      { question, sessionId, conversationHistory },
+      onStreamChunk
+    );
   }
 }
 
