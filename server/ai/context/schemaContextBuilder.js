@@ -11,9 +11,10 @@ export class SchemaContextBuilder {
    * Extracts a focused schema context for a user question.
    * 
    * @param {string} question - User's prompt text
+   * @param {string} conversationHistory - Recent conversation history for follow-up resolution
    * @returns {Promise<{ relevantNodes: Array, relevantRelationships: Array, formattedContext: string }>}
    */
-  async buildRelevantContext(question) {
+  async buildRelevantContext(question, conversationHistory = '') {
     const schema = await schemaCacheManager.getSchema();
     if (!schema || (!schema.nodes.length && !schema.relationships.length)) {
       return {
@@ -23,15 +24,26 @@ export class SchemaContextBuilder {
       };
     }
 
-    const qLower = String(question || '').toLowerCase();
+    const combinedText = `${question} ${conversationHistory}`;
+    const qLower = String(combinedText || '').toLowerCase();
     const words = qLower.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 2);
 
-    // 1. Identify matching Node Labels
+    // 1. Identify matching Node Labels based on labels, properties, OR sample property values
     const matchingNodes = schema.nodes.filter(n => {
       const labelLower = n.label.toLowerCase();
-      // Match exact label or plural/singular variations (e.g. Employee vs Employees)
-      return words.some(w => labelLower.includes(w) || w.includes(labelLower)) ||
-             n.properties.some(p => words.includes(p.toLowerCase()));
+      const labelMatch = words.some(w => labelLower.includes(w) || w.includes(labelLower));
+      const propMatch = n.properties.some(p => words.includes(p.toLowerCase()));
+      
+      let sampleMatch = false;
+      if (n.sampleValues) {
+        Object.values(n.sampleValues).forEach(samples => {
+          if (samples.some(s => words.some(w => String(s).toLowerCase().includes(w)))) {
+            sampleMatch = true;
+          }
+        });
+      }
+
+      return labelMatch || propMatch || sampleMatch;
     });
 
     // Fallback: If no direct keyword match, include primary nodes (or all if small)
@@ -51,7 +63,14 @@ export class SchemaContextBuilder {
     
     formattedContext += '#### RELEVANT NODES:\n';
     selectedNodes.forEach(n => {
-      formattedContext += `- \`:${n.label}\` [Properties: ${n.properties.map(p => `\`${p}\``).join(', ')}]\n`;
+      let propListStr = n.properties.map(p => {
+        const samples = n.sampleValues && n.sampleValues[p];
+        if (samples && samples.length > 0) {
+          return `\`${p}\` [Sample Values: ${samples.map(s => `'${s}'`).join(', ')}]`;
+        }
+        return `\`${p}\``;
+      }).join(', ');
+      formattedContext += `- \`:${n.label}\` [Properties: ${propListStr}]\n`;
     });
 
     if (matchingRels.length > 0) {

@@ -2,6 +2,7 @@ import { NEO4J_PASSWORD, NEO4J_URI, NEO4J_USERNAME, UPLOAD_BATCH_BYTES, UPLOAD_M
 import { createNeo4jDriver, writeNeo4jBatch } from '../services/neo4jService.js';
 import { estimateRowBytes, parseJsonHeader, safeDecodeURIComponent } from '../utils/helpers.js';
 import { schemaCacheManager } from '../ai/cache/schemaCache.js';
+import { callLLM } from '../ai/config/llm.js';
 import csvParser from 'csv-parser';
 
 const uploadLogs = [];
@@ -327,20 +328,12 @@ export async function clearNodesHandler(req, res) {
 
 export async function generateSchemaHandler(req, res) {
   const { headers, data: sampleData } = req.body;
-  const apiKey = process.env.GEMINI_API_KEY;
 
-  if (!apiKey) return res.status(500).json({ success: false, error: 'GEMINI_API_KEY is not configured on the server.' });
   if (!headers || !Array.isArray(headers) || headers.length === 0) return res.status(400).json({ success: false, error: 'Headers are required for schema generation.' });
 
-  const prompt = `You are an expert Neo4j graph data modeler.
+  const systemPrompt = `You are an expert Neo4j graph data modeler.
 
-Analyze the following CSV headers and sample dataset rows.
-
-CSV Headers:
-${headers.join(', ')}
-
-Sample Data (JSON format):
-${JSON.stringify(sampleData || [], null, 2)}
+Analyze the provided CSV headers and sample dataset rows. Return strictly valid JSON only.
 
 INSTRUCTIONS FOR GRAPH SCHEMA GENERATION:
 1. Identify the primary entity (e.g. Case, Employee, Order, Invoice, Product).
@@ -348,49 +341,27 @@ INSTRUCTIONS FOR GRAPH SCHEMA GENERATION:
 3. CRITICAL: Every node's "primaryKey" MUST BE AN EXACT CASE-SENSITIVE STRING MATCH to one of the provided CSV Headers! Do NOT invent new header names like "Case ID" if the header is "case_no".
 4. Define relationship links connecting the primary entity node to secondary nodes (e.g. Case -> HAS_STATUS -> Status, Case -> HAS_FLAG -> Flag).
 5. Always return at least 2 distinct node labels and at least 1 relationship type so Neo4j displays a connected graph network with relationships.
-6. Return strictly valid JSON only.
-
-JSON Format:
+6. Return strictly valid JSON matching this exact structure:
 {
   "nodes": [
-    {
-      "label": "Case",
-      "primaryKey": "case_no",
-      "properties": ["case_no", "filed_date", "closed_date"]
-    },
-    {
-      "label": "Status",
-      "primaryKey": "status",
-      "properties": ["status"]
-    }
+    { "label": "Case", "primaryKey": "case_no", "properties": ["case_no", "filed_date", "closed_date"] },
+    { "label": "Status", "primaryKey": "status", "properties": ["status"] }
   ],
   "relationships": [
-    {
-      "source": "Case",
-      "target": "Status",
-      "type": "HAS_STATUS"
-    }
+    { "source": "Case", "target": "Status", "type": "HAS_STATUS" }
   ]
 }`;
 
+  const userPrompt = `CSV Headers: ${headers.join(', ')}\n\nSample Data (JSON format):\n${JSON.stringify(sampleData || [], null, 2)}`;
+
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' } })
-    });
-
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error?.message || 'Gemini API returned an error.');
-
-    const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!textResponse) throw new Error('Empty response received from Gemini API.');
-
-    const schema = JSON.parse(textResponse);
+    const rawResponse = await callLLM({ systemPrompt, userPrompt, temperature: 0.1, jsonMode: true });
+    const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+    const cleanedJson = jsonMatch ? jsonMatch[0] : rawResponse;
+    const schema = JSON.parse(cleanedJson);
     return res.status(200).json({ success: true, schema });
   } catch (err) {
-    console.error('Failed to generate schema via Gemini:', err);
+    console.error('Failed to generate schema via LLM:', err);
     return res.status(500).json({ success: false, error: err.message || 'Failed to generate schema.' });
   }
 }

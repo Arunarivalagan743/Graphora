@@ -46,9 +46,9 @@ export class ChatWorkflowOrchestrator {
    * Executes full workflow and streams/returns generated response
    */
   async runWorkflow({ question, sessionId }, onStreamChunk) {
-    // 1. Extract Relevant Schema Context
-    const { formattedContext } = await schemaContextBuilder.buildRelevantContext(question);
+    // 1. Extract Conversation History & Relevant Schema Context
     const conversationHistory = chatMemoryManager.getFormattedHistory(sessionId);
+    const { formattedContext } = await schemaContextBuilder.buildRelevantContext(question, conversationHistory);
 
     // 2. Generate Candidate Read-Only Cypher Query
     const sysPrompt = CYPHER_GENERATION_SYSTEM_PROMPT
@@ -62,6 +62,9 @@ export class ChatWorkflowOrchestrator {
     // Extract Cypher from code block if wrapped
     const cypherMatch = rawCypherText.match(/```(?:cypher)?\s*([\s\S]*?)\s*```/i);
     let cypherQuery = cypherMatch ? cypherMatch[1].trim() : rawCypherText.trim();
+
+    console.log('[ChatWorkflow] Formatted Schema Context:\n', formattedContext);
+    console.log('[ChatWorkflow] Generated Cypher:', cypherQuery);
 
     // 3. Validate Cypher Safety
     let validation = validateCypherQuery(cypherQuery);
@@ -78,6 +81,7 @@ export class ChatWorkflowOrchestrator {
     let queryResult = { success: false, records: [], count: 0 };
     if (validation.valid) {
       queryResult = await executeCypherQuery(validation.cypher);
+      console.log('[ChatWorkflow] Query Result Count:', queryResult.count, 'Records:', JSON.stringify(queryResult.records));
     }
 
     // 5. Synthesize Final Human-Friendly Markdown Answer (Zero Hallucination)

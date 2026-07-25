@@ -18,7 +18,8 @@ export async function chatHandler(req, res) {
     });
   }
 
-  const promptText = message.trim();
+  // Clean user prompt to remove trailing/leading quotation marks from input typos
+  const promptText = message.trim().replace(/^["']|["']$/g, '');
   
   // Store user message turn with automatic context trimming
   chatMemoryManager.addUserMessage(sessionId, promptText);

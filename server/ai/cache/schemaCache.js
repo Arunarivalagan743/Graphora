@@ -18,7 +18,7 @@ export class SchemaCacheManager {
    * Returns cached schema metadata. If empty, triggers async refresh.
    */
   async getSchema() {
-    if (!this.cachedSchema) {
+    if (!this.cachedSchema || (!this.cachedSchema.nodes?.length && !this.cachedSchema.relationships?.length)) {
       await this.refreshCache();
     }
     return this.cachedSchema || this.getEmptySchemaFallback();
@@ -47,40 +47,47 @@ export class SchemaCacheManager {
       const session = driver.session();
 
       try {
-        // 1. Fetch Node Labels & Property Keys with counts
+        // 1. Fetch Node Labels & Properties with counts
+        const nodeMap = new Map();
         const labelsRes = await session.run(`
           MATCH (n)
-          WITH labels(n) AS lbls, keys(n) AS props
-          UNWIND lbls AS label
-          UNWIND props AS prop
-          RETURN label, prop, count(*) AS frequency
+          WITH labels(n)[0] AS label, keys(n) AS props, count(*) AS cnt
+          RETURN label, props, cnt
         `);
 
-        const nodeMap = new Map();
         for (const record of labelsRes.records) {
           const label = record.get('label');
-          const prop = record.get('prop');
-          if (!label || !prop) continue;
+          if (!label) continue;
+          const props = record.get('props') || [];
+          const cnt = record.get('cnt')?.toNumber() || 0;
 
           if (!nodeMap.has(label)) {
-            nodeMap.set(label, { label, properties: new Set(), totalCount: 0 });
+            nodeMap.set(label, { label, properties: new Set(), totalCount: cnt });
           }
-          nodeMap.get(label).properties.add(prop);
+          const entry = nodeMap.get(label);
+          props.forEach((p) => entry.properties.add(p));
         }
 
-        // Fetch label node counts
-        const countRes = await session.run(`
-          MATCH (n)
-          UNWIND labels(n) AS label
-          RETURN label, count(n) AS nodeCount
-        `);
-        for (const record of countRes.records) {
-          const label = record.get('label');
-          const count = record.get('nodeCount').toNumber();
-          if (nodeMap.has(label)) {
-            nodeMap.get(label).totalCount = count;
-          } else {
-            nodeMap.set(label, { label, properties: new Set(), totalCount: count });
+        // Fetch sample property values for each node label to enable natural semantic value matching
+        const sampleValuesMap = new Map();
+        for (const [label, nodeInfo] of nodeMap.entries()) {
+          const cleanLabel = label.replace(/`/g, '``');
+          for (const prop of nodeInfo.properties) {
+            const cleanProp = prop.replace(/`/g, '``');
+            try {
+              const sampleRes = await session.run(`
+                MATCH (n:\`${cleanLabel}\`)
+                WHERE n.\`${cleanProp}\` IS NOT NULL AND toString(n.\`${cleanProp}\`) <> ""
+                RETURN DISTINCT toString(n.\`${cleanProp}\`) AS val
+                LIMIT 5
+              `);
+              const samples = sampleRes.records.map((r) => r.get('val')).filter(Boolean);
+              if (samples.length > 0) {
+                sampleValuesMap.set(`${label}:${prop}`, samples);
+              }
+            } catch (e) {
+              // ignore per-property sample query error
+            }
           }
         }
 
@@ -110,12 +117,22 @@ export class SchemaCacheManager {
           }
         }
 
-        // Format nodes array
-        const nodes = Array.from(nodeMap.values()).map(n => ({
-          label: n.label,
-          properties: Array.from(n.properties),
-          count: n.totalCount
-        }));
+        // Format nodes array with sample values
+        const nodes = Array.from(nodeMap.values()).map((n) => {
+          const sampleValues = {};
+          n.properties.forEach((p) => {
+            const samples = sampleValuesMap.get(`${n.label}:${p}`);
+            if (samples && samples.length > 0) {
+              sampleValues[p] = samples;
+            }
+          });
+          return {
+            label: n.label,
+            properties: Array.from(n.properties),
+            sampleValues,
+            count: n.totalCount
+          };
+        });
 
         this.cachedSchema = {
           nodes,
@@ -150,17 +167,28 @@ export class SchemaCacheManager {
 
     let result = '### NEO4J GRAPH SCHEMA METADATA:\n\n';
     result += '#### ENTITY NODES:\n';
-    schema.nodes.forEach(n => {
+    schema.nodes.forEach((n) => {
       result += `- Node Label: \`:${n.label}\` (Count: ${n.count})\n`;
-      result += `  Properties: ${n.properties.length > 0 ? n.properties.map(p => `\`${p}\``).join(', ') : 'None'}\n`;
+      if (n.properties && n.properties.length > 0) {
+        const propDetails = n.properties.map((p) => {
+          const samples = n.sampleValues && n.sampleValues[p];
+          if (samples && samples.length > 0) {
+            return `\`${p}\` [Sample Values: ${samples.map((s) => `'${s}'`).join(', ')}]`;
+          }
+          return `\`${p}\``;
+        }).join(', ');
+        result += `  Properties: ${propDetails}\n`;
+      } else {
+        result += `  Properties: None\n`;
+      }
     });
 
     if (schema.relationships.length > 0) {
       result += '\n#### RELATIONSHIPS:\n';
-      schema.relationships.forEach(r => {
+      schema.relationships.forEach((r) => {
         result += `- (\`:${r.source}\`)-[\`:${r.type}\`]->(\`:${r.target}\`) (Count: ${r.count})\n`;
         if (r.properties && r.properties.length > 0) {
-          result += `  Edge Properties: ${r.properties.map(p => `\`${p}\``).join(', ')}\n`;
+          result += `  Edge Properties: ${r.properties.map((p) => `\`${p}\``).join(', ')}\n`;
         }
       });
     }
