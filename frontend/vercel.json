@@ -1,4 +1,7 @@
 {
+  "env": {
+    "VITE_API_URL": "https://graphora.onrender.com"
+  },
   "rewrites": [
     {
       "source": "/(.*)",

@@ -12,7 +12,24 @@ const __dirname = path.dirname(__filename);
 export function createApp() {
   const app = express();
 
-  app.use(cors());
+  const frontendOrigin = process.env.FRONTEND_ORIGIN;
+  const allowedOrigins = new Set([
+    ...(frontendOrigin ? [frontendOrigin] : []),
+    'http://localhost:5173',
+    'http://localhost:4173',
+    'http://localhost:3000'
+  ]);
+
+  app.use(cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.has(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`CORS blocked for origin: ${origin}`));
+    }
+  }));
   app.use(express.json({ limit: '50mb' }));
   app.use(express.static(path.join(__dirname, 'public')));
   app.use(createUploadRoutes());
