@@ -11,4 +11,4 @@ export const UPLOAD_MIN_BYTES = Number(process.env.UPLOAD_MIN_BYTES) || 256 * 10
 export const UPLOAD_MAX_BYTES = Number(process.env.UPLOAD_MAX_BYTES) || 5 * 1024 * 1024;
 export const UPLOAD_MAX_ROWS = Number(process.env.UPLOAD_MAX_ROWS) || 1000;
 export const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
-export const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+export const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';

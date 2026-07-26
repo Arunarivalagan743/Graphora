@@ -12,7 +12,7 @@ export async function callGroqLlama({ systemPrompt, userPrompt, temperature = 0.
   const url = 'https://api.groq.com/openai/v1/chat/completions';
 
   const bodyPayload = {
-    model: model || 'llama-3.3-70b-versatile',
+    model: model || process.env.GROQ_MODEL || GROQ_MODEL || 'openai/gpt-oss-20b',
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
@@ -110,14 +110,20 @@ export async function callGeminiLLM({ systemPrompt, userPrompt, temperature = 0.
 export async function callLLM({ systemPrompt, userPrompt, temperature = 0.1, jsonMode = false }) {
   const hasGroqKey = Boolean(GROQ_API_KEY || process.env.GROQ_API_KEY);
   if (hasGroqKey) {
+    const activeModel = process.env.GROQ_MODEL || GROQ_MODEL || 'llama-3.3-70b-versatile';
     try {
-      return await callGroqLlama({ systemPrompt, userPrompt, temperature, model: GROQ_MODEL || 'llama-3.3-70b-versatile' });
+      return await callGroqLlama({ systemPrompt, userPrompt, temperature, model: activeModel });
     } catch (err) {
-      console.warn('[LLM Dispatcher] Primary Groq model failed, trying llama-3.1-8b-instant:', err.message);
+      console.warn(`[LLM Dispatcher] Primary Groq model (${activeModel}) failed (${err.message}). Retrying with llama-3.3-70b-versatile...`);
       try {
-        return await callGroqLlama({ systemPrompt, userPrompt, temperature, model: 'llama-3.1-8b-instant' });
+        return await callGroqLlama({ systemPrompt, userPrompt, temperature, model: 'llama-3.3-70b-versatile' });
       } catch (err2) {
-        console.warn('[LLM Dispatcher] Groq 8B fallback failed, trying Gemini:', err2.message);
+        console.warn('[LLM Dispatcher] Groq 70B fallback failed, trying llama-3.1-8b-instant:', err2.message);
+        try {
+          return await callGroqLlama({ systemPrompt, userPrompt, temperature, model: 'llama-3.1-8b-instant' });
+        } catch (err3) {
+          console.warn('[LLM Dispatcher] Groq fallbacks failed, trying Gemini:', err3.message);
+        }
       }
     }
   }

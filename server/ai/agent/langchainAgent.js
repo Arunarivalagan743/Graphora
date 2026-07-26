@@ -22,48 +22,33 @@ export class LangChainToolAgent {
   /**
    * Executes Tool-Calling Agent with internal reasoning & retry loop.
    */
-  async runAgent({ question, sessionId, conversationHistory = '' }, onStreamChunk) {
+  async runAgent({ question, sessionId }, onStreamChunk) {
     const maxIterations = 3;
     let iteration = 0;
     const effectiveQuestion = question;
 
-    // 2. Fetch token-optimized dynamic schema context & sample data
-    const { formattedContext } = await schemaContextBuilder.buildRelevantContext(effectiveQuestion, conversationHistory);
+    // Fetch token-optimized dynamic schema context & sample data strictly for the user question
+    const { formattedContext } = await schemaContextBuilder.buildRelevantContext(effectiveQuestion);
 
-    const systemPrompt = `You are the Graphora Enterprise Tool-Calling AI Agent.
+    const systemPrompt = `You are Graphora AI, an enterprise Neo4j Graph Database agent.
 
-YOUR GOAL:
-Fetch data from the Neo4j Graph Database to answer the user's query accurately using general common-sense domain knowledge, with strict zero hallucination.
+### OBJECTIVE
+Generate a read-only Cypher query against the Neo4j database to answer the user's question accurately without hallucination.
 
-AVAILABLE TOOLS & ABILITIES:
-1. get_database_schema_and_sample_data(): Returns node labels, property names, and sample values.
-2. execute_read_only_cypher(cypher): Executes a read-only query against Neo4j. Enforces LIMIT 50.
-
-COMMON-SENSE SEMANTIC SCHEMA MAPPING:
-1. Quality & Preference ('best', 'top', 'popular', 'highest rated', 'recommended') ➔ Map to rating/score properties in schema (e.g. \`Rating\`, \`Score\`), sorted DESC (\`ORDER BY toFloat(n.Rating) DESC\`). Always include entity name and rating in RETURN clause!
-2. Price & Cost ('cheap', 'affordable', 'budget', 'expensive', 'costly') ➔ Map to price properties (\`Price\`, \`Selling_Price\`), sorted ASC/DESC.
-3. Recency & Usage ('newest', 'latest', 'oldest', 'mileage') ➔ Map to \`Year\`, \`Date\`, \`filing_year\`, or \`Kms_Driven\` properties.
-4. Categorical Filtering ('manual', 'diesel', 'italian', 'street food', 'operating company') ➔ Case-insensitive substring matching on corresponding schema properties: \`toLower(toString(n.propertyName)) CONTAINS toLower('term')\`.
-5. Flexible Date Filtering ➔ Check both dedicated year properties (\`filing_year\`, \`Year\`) and date string properties (\`filed_date\`, \`Date\`). Notice from schema sample values that dates are stored in \`DD-MM-YYYY\` format (e.g. \`06-01-2000\`). Convert user dates like \`2000-01-04\` or \`4.1.2000\` into \`DD-MM-YYYY\` (\`04-01-2000\`) or match by year substring (e.g. \`WHERE toLower(toString(n.filed_date)) CONTAINS '2000'\` or \`toInteger(n.filing_year) = 2000\`).
-6. Complete Attribute Return ➔ ALWAYS RETURN all properties mentioned, filtered, or requested in the user prompt in the RETURN clause!
-7. Safe Numeric Casting ➔ Always wrap string properties with \`toFloat()\` or \`toInteger()\` when performing numeric comparisons (\`<\`, \`>\`, \`<=\`, \`>=\`) or sorting.
-
-AGENT REASONING & EXECUTION RULES:
-- ALWAYS inspect schema and sample property values before building your query.
-- Use node labels listed in the schema. If labels are generic (e.g. \`:Record\`) or if querying across nodes, use generic \`MATCH (n)\`.
-- Check both \`n.id\` (primary key) and \`n.propertyName\` for entity filters.
-- Cypher Aliasing: In RETURN clauses, if column aliases contain spaces, ALWAYS wrap them in backticks or use underscores (e.g. AS Case_No or AS Filed_Date). NEVER write AS Case No without backticks.
-- Enforce \`LIMIT 50\` on all queries to prevent memory overflow.
-- If a query returns 0 rows, REASON about why (e.g. wrong property key or date format mismatch), adjust the query, and retry tool execution.
-- Return Cypher inside a markdown code block (\`\`\`cypher ... \`\`\`).
-- HIDE all reasoning, tool call definitions, and Cypher strings from your final answer.
-- Return ONLY clean, structured, human-friendly Markdown.
-
-ACTIVE DATABASE SCHEMA:
+### DATABASE SCHEMA
 ${formattedContext}
 
-CONVERSATION HISTORY:
-${conversationHistory || 'None'}`;
+### CRITICAL QUERY GENERATION RULES
+1. **Undirected Relationship Traversals**:
+   - ALWAYS use UNDIRECTED relationship patterns like \`(e:Employee)-[:HAS_STATUS]-(s:Status)\` or \`(a)-[r]-(b)\` (WITHOUT directional arrows \`->\` or \`<-\`). This ensures matching succeeds regardless of how edge direction is stored in Neo4j!
+2. **Robust String Matching**:
+   - Use \`toLower(toString(prop)) CONTAINS toLower('term')\`.
+   - Wrap property names with \`toString()\` to safely handle non-string or null values.
+3. **RETURN Clause**:
+   - Return all relevant entity properties (e.g. \`RETURN e.id, e.name, e.email, e.salary, s.status\` or \`RETURN e, s\`).
+   - If column aliases contain spaces, wrap them in backticks or underscores (e.g. AS Status_ID).
+4. **Safety**: Enforce \`LIMIT 50\` on all queries. Only generate read-only \`MATCH ... RETURN\` queries.
+5. **Format**: Output your proposed Cypher query strictly inside a \`\`\`cypher ... \`\`\` block.`;
 
     const userPrompt = `User Question: ${effectiveQuestion}
 
@@ -75,16 +60,22 @@ Generate Cypher query and output ONLY the final human-friendly Markdown response
 
     console.log('[LangChainToolAgent] Active Formatted Schema:\n', formattedContext);
 
-    // Reasoning & Tool Calling Loop
+    // Reasoning & Tool Calling Multi-Iteration Loop
     while (iteration < maxIterations) {
       iteration++;
 
       try {
+        const loopPrompt = iteration === 1
+          ? userPrompt
+          : `${userPrompt}\n\n[Iteration ${iteration}/${maxIterations}: Previous attempt returned 0 records. Generate an adjusted Cypher query using UNDIRECTED relationships (a)-[r]-(b) and toLower(toString(...)) substring matching across all relevant node properties.]`;
+
         const rawLLMResponse = await callLLM({
           systemPrompt,
-          userPrompt: `${userPrompt}\n\n[Reasoning Loop Iteration ${iteration}/${maxIterations}]`,
-          temperature: 0.1
+          userPrompt: loopPrompt,
+          temperature: iteration === 1 ? 0.1 : 0.0
         });
+
+        if (!rawLLMResponse) continue;
 
         console.log(`[LangChainToolAgent Iteration ${iteration}] Raw LLM Response:\n`, rawLLMResponse);
 
@@ -97,12 +88,12 @@ Generate Cypher query and output ONLY the final human-friendly Markdown response
         }
 
         if (candidateCypher) {
-
-          // Enforce read-only validation
           const validation = validateCypherQuery(candidateCypher);
           if (validation.valid) {
-            cypherUsed = validation.cypher;
-            // Append LIMIT 50 if missing
+            // Strip directional arrows from relationship patterns if present to guarantee undirected traversal
+            let cleanCypher = validation.cypher.replace(/-\[:([A-Za-z0-9_]+)\]->/g, '-[:$1]-').replace(/<-\[:([A-Za-z0-9_]+)\]-/g, '-[:$1]-');
+            cypherUsed = cleanCypher;
+
             if (!/\bLIMIT\b/i.test(cypherUsed)) {
               cypherUsed += ' LIMIT 50';
             }
@@ -112,7 +103,6 @@ Generate Cypher query and output ONLY the final human-friendly Markdown response
             recordCount = queryResult.count;
 
             if (queryResult.success && queryResult.records && queryResult.records.length > 0) {
-              // Synthesize final Markdown response grounded strictly in DB results
               const synthesizePrompt = `Synthesize a clear, human-friendly Markdown answer grounded strictly in these raw query execution records. Do NOT show reasoning or Cypher code:
 \nDATABASE RECORDS:\n${JSON.stringify(queryResult.records, null, 2)}`;
 
@@ -123,51 +113,16 @@ Generate Cypher query and output ONLY the final human-friendly Markdown response
               });
               break;
             } else {
-              console.warn(`[LangChainToolAgent Iteration ${iteration}] 0 records returned. Retrying reasoning...`);
-              // Provide feedback loop to LLM for retry
-              const retryPrompt = `Previous Cypher returned 0 records: \`${cypherUsed}\`.\nReason about why 0 records were returned, check property key spelling or case, and output an adjusted Cypher query block.`;
-              const retryResponse = await callLLM({
-                systemPrompt,
-                userPrompt: `${userPrompt}\n\n${retryPrompt}`,
-                temperature: 0.0
-              });
-
-              const secondCypherMatch = retryResponse.match(/```(?:cypher)?\s*([\s\S]*?)\s*```/i);
-              if (secondCypherMatch) {
-                const secondCypher = secondCypherMatch[1].trim();
-                const secondValidation = validateCypherQuery(secondCypher);
-                if (secondValidation.valid) {
-                  cypherUsed = secondValidation.cypher;
-                  if (!/\bLIMIT\b/i.test(cypherUsed)) cypherUsed += ' LIMIT 50';
-                  const secondResult = await neo4jReadService.executeReadOnlyQuery(cypherUsed);
-                  recordCount = secondResult.count;
-
-                  if (secondResult.success && secondResult.records && secondResult.records.length > 0) {
-                    finalMarkdownAnswer = await callLLM({
-                      systemPrompt: 'Output clean Markdown only.',
-                      userPrompt: `Synthesize clean Markdown answer from DB records:\n${JSON.stringify(secondResult.records, null, 2)}`,
-                      temperature: 0.2
-                    });
-                    break;
-                  }
-                }
-              }
-
-              finalMarkdownAnswer = `### Database Search Results\n\nNo matching records or relationships were found in the active Neo4j graph database for your query: **"${question}"**.\n\n> **Suggestion**: Verify property spelling or try exploring connected entities.`;
-              break;
+              console.warn(`[LangChainToolAgent Iteration ${iteration}] 0 records returned for Cypher: ${cypherUsed}. Retrying next iteration...`);
             }
           }
-        }
-
-        // If direct text answer without cypher block
-        if (!candidateCypher) {
+        } else {
           finalMarkdownAnswer = rawLLMResponse;
           break;
         }
 
       } catch (err) {
         console.error(`[LangChainToolAgent Iteration ${iteration}] Error:`, err.message);
-        break;
       }
     }
 

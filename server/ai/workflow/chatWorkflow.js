@@ -43,10 +43,8 @@ export class ChatWorkflowOrchestrator {
    * Executes tool agent workflow and streams final synthesized response
    */
   async runWorkflow({ question, sessionId }, onStreamChunk) {
-    const conversationHistory = chatMemoryManager.getFormattedHistory(sessionId);
-
     return await langchainToolAgent.runAgent(
-      { question, sessionId, conversationHistory },
+      { question, sessionId },
       onStreamChunk
     );
   }

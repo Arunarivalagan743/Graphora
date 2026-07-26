@@ -11,10 +11,9 @@ export class SchemaContextBuilder {
    * Extracts a focused schema context for a user question.
    * 
    * @param {string} question - User's prompt text
-   * @param {string} conversationHistory - Recent conversation history for follow-up resolution
    * @returns {Promise<{ relevantNodes: Array, relevantRelationships: Array, formattedContext: string }>}
    */
-  async buildRelevantContext(question, conversationHistory = '') {
+  async buildRelevantContext(question) {
     const schema = await schemaCacheManager.getSchema();
     if (!schema || (!schema.nodes.length && !schema.relationships.length)) {
       return {
@@ -24,8 +23,7 @@ export class SchemaContextBuilder {
       };
     }
 
-    const combinedText = `${question} ${conversationHistory}`;
-    const qLower = String(combinedText || '').toLowerCase();
+    const qLower = String(question || '').toLowerCase();
     const words = qLower.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 2);
 
     // 1. Identify matching Node Labels based on labels, properties, OR sample property values
@@ -46,8 +44,10 @@ export class SchemaContextBuilder {
       return labelMatch || propMatch || sampleMatch;
     });
 
-    // Fallback: If no direct keyword match, include primary nodes (or all if small)
-    const selectedNodes = matchingNodes.length > 0 ? matchingNodes : schema.nodes.slice(0, 5);
+    // Include matching nodes, or all nodes if total schema labels <= 20
+    const selectedNodes = (matchingNodes.length > 0 && schema.nodes.length > 20)
+      ? matchingNodes
+      : schema.nodes;
     const selectedNodeLabels = new Set(selectedNodes.map(n => n.label));
 
     // 2. Identify matching Relationships connecting selected nodes or mentioned in query
